@@ -70,9 +70,9 @@ indexer:
   # Para generar el hash: 
   # docker run --rm -ti wazuh/wazuh-indexer:4.14.1 bash /usr/share/wazuh-indexer/plugins/opensearch-security/tools/hash.sh
   cred:
-    password: "hcuov_0612#"
+    password: "password"
     # Hash bcrypt del password anterior (DEBES GENERARLO)
-    passwordHash: "$2y$12$2ofWukWT8qkC1MBADODZTutknh2gXQsA0ecSkUUIomaF52iu8CdGG"
+    passwordHash: ""
   
   # Deshabilitar PDB para single node
   pdb:
