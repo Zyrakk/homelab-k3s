@@ -1,123 +1,178 @@
-<div align="center">
+# Vuln-Reporter
 
-# k3s Homelab Infrastructure
+A lightweight Python-based vulnerability monitoring tool that continuously fetches CVEs from the **Kubernetes** and **Red Hat (OpenShift)** security feeds, deduplicates them, and delivers real-time alerts to **Microsoft Teams** — with built-in **Prometheus metrics** and **Grafana** integration for observability.
 
-**Infrastructure as Code for distributed k3s cluster on heterogeneous hardware**
-
-[![k3s](https://img.shields.io/badge/k3s-v1.31.4-orange)](https://k3s.io)
-[![Helm](https://img.shields.io/badge/Helm-v3.x-blue)](https://helm.sh)
-[![Kubernetes](https://img.shields.io/badge/Kubernetes-v1.31-5bc5ee)](https://kubernetes.io)
-
-</div>
+> **Production usage:** Currently deployed and actively used by multiple **banking** and **healthcare** organizations running OpenShift and Kubernetes clusters.
 
 ---
 
-## Overview
-
-Distributed k3s cluster running on mixed architecture (x86_64 + ARM64) nodes interconnected via WireGuard VPN. Includes full
-observability stack and SIEM.
-
 ## Architecture
 
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                              WireGuard VPN (10.10.0.0/24)                   │
-└──────────────────────────────────────┬──────────────────────────────────────┘
-                                        │
-        ┌──────────────────────────────┼──────────────────────────────┐
-        │                              │                              │
-        ▼                              ▼                              ▼
-┌───────────────┐          ┌─────────────────┐              ┌───────────────┐
-│ LAKE          │          │ ORACLE CLOUD    │              │ RASPBERRY PI  │
-│ Intel N150    │          │ 2x ARM VMs      │              │ Pi 5 (ARM64)  │
-│ x86_64        │          │                 │              │               │
-│ 10.10.0.1     │          │ 10.10.0.21/22   │              │ 10.10.0.2     │
-│               │          │                 │              │               │
-│ Control Plane │          │ Worker Nodes    │              │ NFS Storage   │
-│ + Wazuh Stack │          │                 │              │               │
-└───────────────┘          └─────────────────┘              └───────────────┘
+```mermaid
+flowchart LR
+    subgraph Sources
+        K8S[Kubernetes CVE Feed]
+        RH[Red Hat Security API]
+    end
 
-## Components
+    subgraph vuln-reporter Pod
+        MAIN[main.py]
+        STATE[(run_state.json)]
+        PROM_EXP[Prometheus Exporter\n:8000]
+    end
 
-| Directory | Description |
-|-----------|-------------|
-| **[wireguard/](wireguard/)** | VPN mesh setup scripts (server + client) |
-| **[k3s/](k3s/)** | k3s installation (server/agent setup) |
-| **[monitoring/](monitoring/)** | VictoriaMetrics, Grafana, Node Exporter, KSM |
-| **[wazuh-stack/](wazuh-stack/)** | SIEM platform (Indexer, Manager, Dashboard) |
+    subgraph Alerting
+        TEAMS[Microsoft Teams\nWebhook]
+    end
 
-## Tech Stack
+    subgraph Observability
+        PROMETHEUS[Prometheus Server]
+        ALERTMGR[Alertmanager]
+        GRAFANA[Grafana]
+    end
 
-- **k3s** v1.31.4 - Lightweight Kubernetes distribution
-- **WireGuard** - Layer 3 secure VPN tunnel
-- **cert-manager** - Automated TLS certificate management
-- **VictoriaMetrics** v1.122.0 - High-performance time series database
-- **Grafana** v12.3.1 - Metrics visualization
-- **Wazuh** v4.14.1 - Security information and event management
-- **NFS** - Shared persistent storage via dynamic provisioning
+    K8S -- JSON feed --> MAIN
+    RH -- REST API --> MAIN
+    MAIN -- deduplicate --> STATE
+    MAIN -- MessageCard --> TEAMS
+    MAIN -- metrics --> PROM_EXP
+    PROM_EXP -- scrape --> PROMETHEUS
+    PROMETHEUS -- rules --> ALERTMGR
+    PROMETHEUS -- datasource --> GRAFANA
+```
+
+---
+
+## Features
+
+- **Dual-source CVE monitoring** — Fetches from the official Kubernetes CVE feed and Red Hat Security Data API on a 5-minute cycle.
+- **Deduplication with persistence** — Tracks processed CVE IDs in `run_state.json` to avoid duplicate alerts, even across pod restarts.
+- **Teams alerting** — Sends color-coded MessageCards to Microsoft Teams with severity, CVSS score, description, and direct links.
+- **Prometheus metrics** — Exposes `cve_critical_total` gauge (labeled by source) for integration with alerting rules.
+- **Prometheus + Grafana stack** — Includes Helm values and a one-command deployment script with auto-configured datasource.
+- **Minimal footprint** — Runs on `python:3.11-alpine` with a non-root user, optimized for security-conscious environments.
+
+---
 
 ## Quick Start
 
 ### Prerequisites
-- 4+ nodes (1 x86_64 for control plane, ARM64 compatible)
-- Fedora/RHEL/CentOS on all nodes
-- SSH access between nodes
 
-### 1. Deploy WireGuard VPN
-```bash
-cd wireguard
-sudo ./wg-server-setup.sh              # On control plane node
-sudo ./wg-client-setup.sh --server-ip 10.10.0.1  # On each worker
+- A running Kubernetes cluster (Minikube, OpenShift, etc.)
+- `kubectl` configured against your cluster
+- A Microsoft Teams Incoming Webhook URL
+
+### 1. Configure the webhook secret
+
+Edit `teams-webhook-secret.yaml` and replace the placeholder with your actual Teams webhook URL:
+
+```yaml
+stringData:
+  TEAMS_WEBHOOK: "https://your-org.webhook.office.com/..."
 ```
 
-### 2. Install k3s Cluster
+### 2. Deploy everything
+
+Run the deployment script, which builds the image, deploys the app, and sets up the full Prometheus + Grafana stack:
+
 ```bash
-cd k3s
-sudo ./k3s-server-setup.sh             # On control plane
-TOKEN=$(sudo cat /var/lib/rancher/k3s/server/node-token)
-sudo ./k3s-agent-setup.sh --server-ip 10.10.0.1 --token $TOKEN  # On workers
+chmod +x despliegue.sh
+./despliegue.sh
 ```
 
-### 3. Deploy Monitoring Stack
+This will:
+
+1. Build the Docker image via Minikube
+2. Apply the secret and deployment manifests
+3. Install Prometheus and Grafana via Helm
+4. Configure the Grafana datasource automatically
+5. Expose Prometheus on `localhost:9090` and Grafana on `localhost:3000`
+
+### Manual deployment (step by step)
+
 ```bash
-cd monitoring
-kubectl apply -f 00-namespace.yaml
-kubectl apply -f 01-node-exporter.yaml
-kubectl apply -f 02-victoriametrics.yaml
-kubectl apply -f 03-grafana.yaml
-kubectl apply -f 04-kube-state-metrics.yaml
+# Build image
+minikube image build -t vuln_reporter:1.0 .
+
+# Deploy secret and app
+kubectl apply -f teams-webhook-secret.yaml
+kubectl apply -f deployment.yaml
+
+# Deploy Prometheus with custom values
+helm upgrade --install prometheus prometheus-community/prometheus \
+  -n monitoring --create-namespace -f values.yaml
+
+# Deploy Grafana
+helm upgrade --install grafana grafana/grafana -n monitoring
+
+# Get Grafana password
+kubectl get secret -n monitoring grafana \
+  -o jsonpath="{.data.admin-password}" | base64 --decode; echo
 ```
 
-### 4. Deploy Wazuh SIEM
-```bash
-cd wazuh-stack
-helm repo add wazuh-helm https://morgoved.github.io/wazuh-helm
-helm install wazuh wazuh-helm/wazuh -n wazuh -f wazuh-values.yaml --create-namespace
+---
+
+## How It Works
+
+The main loop runs every **5 minutes** and performs the following cycle:
+
+1. **Load state** — Reads `run_state.json` to recover the last check timestamp and the set of already-processed CVE IDs.
+2. **Fetch CVEs** — Queries both the Kubernetes and Red Hat feeds for the most recent vulnerabilities.
+3. **Deduplicate** — Skips any CVE whose ID is already in the processed set.
+4. **Alert** — Sends a Teams MessageCard for each new CVE, color-coded by CVSS severity (Critical ≥ 9.0, High ≥ 7.0, Medium ≥ 4.0, Low > 0).
+5. **Expose metrics** — Updates the `cve_critical_total` Prometheus gauge per source.
+6. **Persist state** — Writes the updated timestamp and processed IDs back to `run_state.json`.
+
+### Prometheus Alerting
+
+The included `values.yaml` defines an alert rule that fires when critical vulnerabilities (CVSS ≥ 9.0) are detected:
+
+```yaml
+- alert: CriticalCVEDetected
+  expr: cve_critical_total > 0
+  for: 1m
+  labels:
+    severity: critical
 ```
 
-### Cluster Status
-```bash
-kubectl get nodes -o wide
-kubectl get pods -A
-kubectl get pvc -A
+---
+
+## Project Structure
+
+```
+vuln-reporter/
+├── main.py                    # Core monitoring script
+├── Dockerfile                 # Alpine-based image with non-root user
+├── requirements.txt           # Pinned Python dependencies
+├── deployment.yaml            # Kubernetes Deployment + Service
+├── teams-webhook-secret.yaml  # Secret template for Teams webhook
+├── values.yaml                # Prometheus Helm chart values + alert rules
+├── despliegue.sh              # One-command deployment script
+└── README.md
 ```
 
-Design Decisions
-┌─────────────────────────────────┬───────────────────────────────────────────────────────────┐
-│            Decision             │                         Rationale                         │
-├─────────────────────────────────┼───────────────────────────────────────────────────────────┤
-│ k3s over full k8s               │ Lower resource footprint, single binary, embedded SQLite  │
-├─────────────────────────────────┼───────────────────────────────────────────────────────────┤
-│ WireGuard over OpenVPN          │ Smaller codebase, faster performance, modern cryptography │
-├─────────────────────────────────┼───────────────────────────────────────────────────────────┤
-│ VictoriaMetrics over Prometheus │ Better compression, lower memory usage, PromQL compatible │
-├─────────────────────────────────┼───────────────────────────────────────────────────────────┤
-│ x86_64 control plane            │ Wazuh components only available in x86_64                 │
-├─────────────────────────────────┼───────────────────────────────────────────────────────────┤
-│ NFS on Pi 5                     │ Cost-effective always-on storage node                     │
-└─────────────────────────────────┴───────────────────────────────────────────────────────────┘
+---
+
+## Tech Stack
+
+| Component       | Technology                                       |
+| --------------- | ------------------------------------------------ |
+| Language         | Python 3.11                                      |
+| Container        | Alpine Linux (non-root)                          |
+| Orchestration    | Kubernetes / OpenShift                           |
+| Metrics          | Prometheus + prometheus_client                   |
+| Visualization    | Grafana                                          |
+| Alerting         | Microsoft Teams Webhooks + Alertmanager          |
+| CVE Sources      | Kubernetes Official Feed, Red Hat Security API   |
+
+---
+
+## Authors
+
+Developed by [**Zyrak**](https://github.com/Zyrak) and [**D4rpell**](https://github.com/d4rpell).
+
+---
 
 ## License
 
-MIT
-
----
+This project is open source and available under the [MIT License](LICENSE).
