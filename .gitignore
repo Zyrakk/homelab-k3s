@@ -1,0 +1,7 @@
+# Secrets
+./syncthing/cloudflare-secret.yaml
+
+# Values files with secrets
+*-secret.yaml
+*-secrets.yaml
+wazuh-stack/wazuh-values-secret.yaml

@@ -1,0 +1,67 @@
+image:
+  repository: syncthing/syncthing
+  tag: latest
+  pullPolicy: IfNotPresent
+
+service:
+  main:
+    ports:
+      http:
+        port: 8384
+  listen:
+    enabled: true
+    type: NodePort
+    externalTrafficPolicy: Local
+    ports:
+      listen:
+        enabled: true
+        port: 22000
+        protocol: TCP
+        targetPort: 22000
+  discovery:
+    enabled: true
+    type: NodePort
+    externalTrafficPolicy: Local
+    ports:
+      discovery:
+        enabled: true
+        port: 21027
+        protocol: UDP
+        targetPort: 21027
+
+ingress:
+  main:
+    enabled: true
+    ingressClassName: "traefik"
+    annotations:
+      # Verify issuer name matches your existing cert-manager cluster issuer
+      cert-manager.io/cluster-issuer: "letsencrypt-prod"
+      traefik.ingress.kubernetes.io/router.entrypoints: "websecure"
+    hosts:
+      - host: syncthing.zyrak.cloud
+        paths:
+          - path: /
+            pathType: Prefix
+    tls:
+      - secretName: syncthing-tls-cert
+        hosts:
+          - syncthing.zyrak.cloud
+
+persistence:
+  data:
+    enabled: true
+    # Explicitly targeting your existing NFS shared storage class
+    storageClass: "nfs-shared"
+    accessMode: ReadWriteOnce
+    size: 50Gi
+
+env:
+  TZ: "Europe/Madrid"
+
+resources:
+  limits:
+    cpu: 1000m
+    memory: 512Mi
+  requests:
+    cpu: 100m
+    memory: 256Mi

@@ -630,9 +630,15 @@ spec:
           image: grafana/grafana:12.3.1
           env:
             - name: GF_SECURITY_ADMIN_USER
-              value: "admin"
+              valueFrom:
+                secretKeyRef:
+                  name: grafana-credentials
+                  key: admin-user
             - name: GF_SECURITY_ADMIN_PASSWORD
-              value: "zcloud-admin-2026"
+              valueFrom:
+                secretKeyRef:
+                  name: grafana-credentials
+                  key: admin-password
             - name: GF_USERS_ALLOW_SIGN_UP
               value: "false"
             - name: GF_SERVER_ROOT_URL

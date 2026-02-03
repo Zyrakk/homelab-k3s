@@ -54,6 +54,19 @@ indexer:
     CLUSTER_NAME: "wazuh"
     NETWORK_HOST: "0.0.0.0"
     DISABLE_INSTALL_DEMO_CONFIG: "true"
+
+  # Extra environment variables from Secret
+  extraEnv:
+    - name: INDEXER_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          name: wazuh-credentials
+          key: indexer-password
+    - name: INDEXER_PASSWORD_HASH
+      valueFrom:
+        secretKeyRef:
+          name: wazuh-credentials
+          key: indexer-password-hash
   
   # Storage NFS
   storageClass: nfs-shared
@@ -67,12 +80,12 @@ indexer:
     metrics: 9600
   
   # Credenciales del indexer (admin)
-  # Para generar el hash: 
+  # Para generar el hash:
   # docker run --rm -ti wazuh/wazuh-indexer:4.14.1 bash /usr/share/wazuh-indexer/plugins/opensearch-security/tools/hash.sh
+  # NOTA: Las credenciales se obtienen del Secret wazuh-credentials
   cred:
-    password: "password"
-    # Hash bcrypt del password anterior (DEBES GENERARLO)
-    passwordHash: ""
+    password: null  # Se obtiene de INDEXER_PASSWORD via extraEnv
+    passwordHash: null  # Se obtiene de INDEXER_PASSWORD_HASH via extraEnv
   
   # Deshabilitar PDB para single node
   pdb:
@@ -93,7 +106,8 @@ wazuh:
     kubernetes.io/hostname: lake
   
   # Clave del cluster (cambiar en producción)
-  key: "c98b62a9b6169ac5f67dae55ae4a9088"
+  # NOTA: Se obtiene del Secret wazuh-credentials
+  key: null  # Usar envFrom con secretKeyRef
   
   syslog_enable: true
   
@@ -105,17 +119,42 @@ wazuh:
   # Variables de entorno
   env:
     FILEBEAT_SSL_VERIFICATION_MODE: full
+
+  # Extra environment variables from Secret
+  extraEnv:
+    - name: WAZUH_CLUSTER_KEY
+      valueFrom:
+        secretKeyRef:
+          name: wazuh-credentials
+          key: cluster-key
+    - name: WAZUH_API_USER
+      valueFrom:
+        secretKeyRef:
+          name: wazuh-credentials
+          key: api-username
+    - name: WAZUH_API_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          name: wazuh-credentials
+          key: api-password
+    - name: WAZUH_AUTHD_PASS
+      valueFrom:
+        secretKeyRef:
+          name: wazuh-credentials
+          key: agent-enrollment-password
   
   # Credenciales API (para dashboard y agentes)
   # La password DEBE tener: mayúscula, minúscula, número y símbolo (.*+?-)
+  # NOTA: Se obtienen del Secret wazuh-credentials
   apiCred:
-    username: "wazuh-wui"
-    password: "Zcloud.Wazuh2026*" 
+    username: null  # Usar envFrom con secretKeyRef
+    password: null  # Usar envFrom con secretKeyRef 
   
   # Password para registro de agentes
+  # NOTA: Se obtiene del Secret wazuh-credentials
   authd:
     enabled: true
-    pass: "AgentEnroll2024"
+    pass: null  # Usar envFrom con secretKeyRef
   
   # --- Master ---
   master:
@@ -170,12 +209,31 @@ dashboard:
   
   # SSL interno deshabilitado (Traefik maneja TLS externo)
   enable_ssl: false
+
+  # Extra environment variables from Secret
+  extraEnv:
+    - name: KIBANASERVER_USER
+      valueFrom:
+        secretKeyRef:
+          name: wazuh-credentials
+          key: dashboard-username
+    - name: KIBANASERVER_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          name: wazuh-credentials
+          key: dashboard-password
+    - name: KIBANASERVER_PASSWORD_HASH
+      valueFrom:
+        secretKeyRef:
+          name: wazuh-credentials
+          key: dashboard-password-hash
   
   # Credenciales dashboard (kibanaserver)
+  # NOTA: Se obtienen del Secret wazuh-credentials
   cred:
-    username: "kibanaserver"
-    password: "kibanaserver"
-    passwordHash: "$2a$12$7NCZ.l9ntPhou5zNjZIU4uqXNNWMF7SyF6Y6mcjhHTB6Z1eQubHC."
+    username: null  # Usar envFrom con secretKeyRef
+    password: null  # Usar envFrom con secretKeyRef
+    passwordHash: null  # Usar envFrom con secretKeyRef
   
   service:
     type: ClusterIP
