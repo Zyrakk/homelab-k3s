@@ -23,6 +23,7 @@ NFS_SERVER="10.10.0.2"           # IP de la Raspberry en VPN
 NFS_PATH_ORACLE1="/mnt/nfs/oracle1"
 NFS_PATH_ORACLE2="/mnt/nfs/oracle2"
 NFS_PATH_SHARED="/mnt/nfs/shared"
+NFS_PATH_NVME="/mnt/nvme"
 
 export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
 
@@ -161,6 +162,17 @@ install_nfs_provisioner() {
         --set storageClass.defaultClass=true \
         --set storageClass.reclaimPolicy=Retain \
         --set storageClass.archiveOnDelete=true
+
+    # Instalar provisioner para NVMe (nfs-nvme)
+    log_info "Instalando provisioner para NVMe..."
+    helm upgrade --install nfs-nvme nfs-subdir-external-provisioner/nfs-subdir-external-provisioner \
+        --namespace nfs-provisioner \
+        --set nfs.server="${NFS_SERVER}" \
+        --set nfs.path="${NFS_PATH_NVME}" \
+        --set storageClass.name=nfs-nvme \
+        --set storageClass.defaultClass=false \
+        --set storageClass.reclaimPolicy=Retain \
+        --set storageClass.archiveOnDelete=true
     
     log_ok "NFS provisioner instalado"
 }
@@ -176,6 +188,9 @@ create_storage_classes() {
     
     # Marcar local-path como no-default
     kubectl patch storageclass local-path -p '{"metadata": {"annotations":{"storageclass.kubernetes.io/is-default-class":"false"}}}' 2>/dev/null || true
+
+    # Asegurar nfs-nvme como no-default
+    kubectl patch storageclass nfs-nvme -p '{"metadata": {"annotations":{"storageclass.kubernetes.io/is-default-class":"false"}}}' 2>/dev/null || true
     
     log_ok "StorageClasses configuradas"
 }
@@ -219,25 +234,46 @@ spec:
   resources:
     requests:
       storage: 100Mi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: test-nfs-pvc-nvme
+  namespace: default
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: nfs-nvme
+  resources:
+    requests:
+      storage: 100Mi
 EOF
 
     sleep 10
     
     echo ""
-    echo -e "${YELLOW}Estado del PVC de prueba:${NC}"
-    kubectl get pvc test-nfs-pvc
+    echo -e "${YELLOW}Estado de PVCs de prueba:${NC}"
+    kubectl get pvc test-nfs-pvc test-nfs-pvc-nvme
     
-    PVC_STATUS=$(kubectl get pvc test-nfs-pvc -o jsonpath='{.status.phase}' 2>/dev/null || echo "Unknown")
+    PVC_STATUS_SHARED=$(kubectl get pvc test-nfs-pvc -o jsonpath='{.status.phase}' 2>/dev/null || echo "Unknown")
+    PVC_STATUS_NVME=$(kubectl get pvc test-nfs-pvc-nvme -o jsonpath='{.status.phase}' 2>/dev/null || echo "Unknown")
     
-    if [[ "$PVC_STATUS" == "Bound" ]]; then
-        log_ok "PVC de prueba creado y vinculado correctamente"
+    if [[ "$PVC_STATUS_SHARED" == "Bound" ]]; then
+        log_ok "PVC de prueba nfs-shared creado y vinculado correctamente"
     else
-        log_warn "PVC en estado: $PVC_STATUS (puede tardar unos segundos)"
+        log_warn "PVC nfs-shared en estado: $PVC_STATUS_SHARED (puede tardar unos segundos)"
+    fi
+
+    if [[ "$PVC_STATUS_NVME" == "Bound" ]]; then
+        log_ok "PVC de prueba nfs-nvme creado y vinculado correctamente"
+    else
+        log_warn "PVC nfs-nvme en estado: $PVC_STATUS_NVME (puede tardar unos segundos)"
     fi
     
     echo ""
     # Eliminar PVC de prueba automáticamente
     kubectl delete pvc test-nfs-pvc --ignore-not-found
+    kubectl delete pvc test-nfs-pvc-nvme --ignore-not-found
     log_ok "PVC de prueba eliminado"
 }
 

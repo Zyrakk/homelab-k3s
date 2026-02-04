@@ -113,7 +113,7 @@ metadata:
 spec:
   accessModes:
     - ReadWriteOnce
-  storageClassName: nfs-shared
+  storageClassName: nfs-nvme
   resources:
     requests:
       storage: 50Gi

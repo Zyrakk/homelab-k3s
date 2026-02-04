@@ -117,6 +117,7 @@ kubectl get pvc -A
 | VictoriaMetrics over Prometheus | Better compression, lower memory usage, PromQL compatible |
 | x86\_64 control plane | Wazuh components only available in x86\_64 |
 | NFS on Pi 5 | Cost-effective always-on storage node |
+| Split NFS classes | nfs-shared on HDD DAS, nfs-nvme on NVMe for high I/O |
 
 ## License
 

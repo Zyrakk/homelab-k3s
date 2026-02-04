@@ -4,7 +4,7 @@
 # URL: https://artifacthub.io/packages/helm/wazuh-helm-morgoved/wazuh
 # =============================================================================
 # IMPORTANTE: Wazuh NO tiene imágenes ARM64, todo debe correr en 'lake' (x86_64)
-# Storage: nfs-shared (NFS desde raspberry 10.10.0.2)
+# Storage: nfs-nvme (NFS desde raspberry 10.10.0.2)
 # =============================================================================
 
 # --- Cert-manager (para certificados internos TLS) ---
@@ -69,7 +69,7 @@ indexer:
           key: indexer-password-hash
   
   # Storage NFS
-  storageClass: nfs-shared
+  storageClass: nfs-nvme
   storageSize: 50Gi
   
   # Servicio interno
@@ -172,7 +172,7 @@ wazuh:
       type: ClusterIP
     
     # Storage NFS
-    storageClass: nfs-shared
+    storageClass: nfs-nvme
     storageSize: 20Gi
     
     networkPolicy:
