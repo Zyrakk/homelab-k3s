@@ -1,36 +1,29 @@
 # =============================================================================
 # Wazuh Helm Values para ZCloud (k3s híbrido)
 # Chart: morgoved/wazuh-helm v1.0.9
-# URL: https://artifacthub.io/packages/helm/wazuh-helm-morgoved/wazuh
 # =============================================================================
 # IMPORTANTE: Wazuh NO tiene imágenes ARM64, todo debe correr en 'lake' (x86_64)
-# Storage: nfs-nvme (NFS desde raspberry 10.10.0.2)
+# PRERREQUISITO: kubectl apply -f wazuh-secrets.yaml
 # =============================================================================
 
-# --- Cert-manager (para certificados internos TLS) ---
-# Si ya tienes cert-manager instalado en el cluster, déjalo deshabilitado
 cert-manager:
   enabled: false
 
-# Usar cert-manager existente para generar certificados autofirmados internos
 certificates:
   enabled: true
   issuer:
-    name: null  # Creará un issuer selfsigned automáticamente
+    name: null
     type: issuer
-  duration: 2160h    # 90 días
-  renewBefore: 360h  # Renovar 15 días antes
+  duration: 2160h
+  renewBefore: 360h
 
 # =============================================================================
 # WAZUH INDEXER (OpenSearch)
 # =============================================================================
 indexer:
   enabled: true
-  
-  # Single node para setup pequeño
   replicas: 1
   
-  # ⚠️ CRÍTICO: Forzar a nodo x86_64
   nodeSelector:
     kubernetes.io/hostname: lake
   
@@ -39,7 +32,6 @@ indexer:
     tag: "4.14.1"
     pullPolicy: IfNotPresent
   
-  # Recursos ajustados para Intel N150
   resources:
     requests:
       cpu: 300m
@@ -48,66 +40,42 @@ indexer:
       cpu: 1000m
       memory: 2Gi
   
-  # JVM heap (debe ser ~50% de memory limit)
   env:
     OPENSEARCH_JAVA_OPTS: "-Xms1g -Xmx1g -Dlog4j2.formatMsgNoLookups=true"
     CLUSTER_NAME: "wazuh"
     NETWORK_HOST: "0.0.0.0"
     DISABLE_INSTALL_DEMO_CONFIG: "true"
-
-  # Extra environment variables from Secret
-  extraEnv:
-    - name: INDEXER_PASSWORD
-      valueFrom:
-        secretKeyRef:
-          name: wazuh-credentials
-          key: indexer-password
-    - name: INDEXER_PASSWORD_HASH
-      valueFrom:
-        secretKeyRef:
-          name: wazuh-credentials
-          key: indexer-password-hash
   
-  # Storage NFS
   storageClass: nfs-nvme
   storageSize: 50Gi
   
-  # Servicio interno
   service:
     type: ClusterIP
     httpPort: 9200
     nodes: 9300
     metrics: 9600
   
-  # Credenciales del indexer (admin)
-  # Para generar el hash:
-  # docker run --rm -ti wazuh/wazuh-indexer:4.14.1 bash /usr/share/wazuh-indexer/plugins/opensearch-security/tools/hash.sh
-  # NOTA: Las credenciales se obtienen del Secret wazuh-credentials
+  # Credenciales via existingSecret (el chart lee INDEXER_PASSWORD y INDEXER_PASSWORD_HASH)
   cred:
-    password: null  # Se obtiene de INDEXER_PASSWORD via extraEnv
-    passwordHash: null  # Se obtiene de INDEXER_PASSWORD_HASH via extraEnv
+    existingSecret: "wazuh-credentials"
   
-  # Deshabilitar PDB para single node
   pdb:
     enabled: false
   
-  # Network policy (permitir tráfico interno)
   networkPolicy:
-    enabled: false  # Simplificar para debug inicial
+    enabled: false
 
 # =============================================================================
-# WAZUH MANAGER (Master + Workers)
+# WAZUH MANAGER
 # =============================================================================
 wazuh:
   enabled: true
   
-  # CRÍTICO: Forzar a nodo x86_64
   nodeSelector:
     kubernetes.io/hostname: lake
   
-  # Clave del cluster (cambiar en producción)
-  # NOTA: Se obtiene del Secret wazuh-credentials
-  key: null  # Usar envFrom con secretKeyRef
+  # Cluster key - debe estar en el values (no soporta existingSecret para esto)
+  key: "93b1ec5421dfce6da16b5b159b8fb3de"
   
   syslog_enable: true
   
@@ -116,47 +84,18 @@ wazuh:
     tag: "4.14.1"
     pullPolicy: IfNotPresent
   
-  # Variables de entorno
   env:
     FILEBEAT_SSL_VERIFICATION_MODE: full
-
-  # Extra environment variables from Secret
-  extraEnv:
-    - name: WAZUH_CLUSTER_KEY
-      valueFrom:
-        secretKeyRef:
-          name: wazuh-credentials
-          key: cluster-key
-    - name: WAZUH_API_USER
-      valueFrom:
-        secretKeyRef:
-          name: wazuh-credentials
-          key: api-username
-    - name: WAZUH_API_PASSWORD
-      valueFrom:
-        secretKeyRef:
-          name: wazuh-credentials
-          key: api-password
-    - name: WAZUH_AUTHD_PASS
-      valueFrom:
-        secretKeyRef:
-          name: wazuh-credentials
-          key: agent-enrollment-password
   
-  # Credenciales API (para dashboard y agentes)
-  # La password DEBE tener: mayúscula, minúscula, número y símbolo (.*+?-)
-  # NOTA: Se obtienen del Secret wazuh-credentials
+  # API credentials via existingSecret (el chart lee API_USERNAME y API_PASSWORD)
   apiCred:
-    username: null  # Usar envFrom con secretKeyRef
-    password: null  # Usar envFrom con secretKeyRef 
+    existingSecret: "wazuh-credentials"
   
-  # Password para registro de agentes
-  # NOTA: Se obtiene del Secret wazuh-credentials
+  # Authd via existingSecret (el chart lee authd.pass)
   authd:
     enabled: true
-    pass: null  # Usar envFrom con secretKeyRef
+    existingSecret: "wazuh-credentials"
   
-  # --- Master ---
   master:
     enabled: true
     
@@ -171,14 +110,12 @@ wazuh:
     service:
       type: ClusterIP
     
-    # Storage NFS
     storageClass: nfs-nvme
     storageSize: 20Gi
     
     networkPolicy:
       enabled: false
   
-  # --- Workers (deshabilitados para setup pequeño) ---
   worker:
     enabled: false
     replicas: 0
@@ -190,7 +127,6 @@ dashboard:
   enabled: true
   replicas: 1
   
-  # ⚠️ CRÍTICO: Forzar a nodo x86_64
   nodeSelector:
     kubernetes.io/hostname: lake
   
@@ -207,39 +143,18 @@ dashboard:
       cpu: 500m
       memory: 1Gi
   
-  # SSL interno deshabilitado (Traefik maneja TLS externo)
   enable_ssl: false
-
-  # Extra environment variables from Secret
-  extraEnv:
-    - name: KIBANASERVER_USER
-      valueFrom:
-        secretKeyRef:
-          name: wazuh-credentials
-          key: dashboard-username
-    - name: KIBANASERVER_PASSWORD
-      valueFrom:
-        secretKeyRef:
-          name: wazuh-credentials
-          key: dashboard-password
-    - name: KIBANASERVER_PASSWORD_HASH
-      valueFrom:
-        secretKeyRef:
-          name: wazuh-credentials
-          key: dashboard-password-hash
   
-  # Credenciales dashboard (kibanaserver)
-  # NOTA: Se obtienen del Secret wazuh-credentials
+  # Credenciales via existingSecret 
+  # El chart lee DASHBOARD_USERNAME, DASHBOARD_PASSWORD, DASHBOARD_PASSWORD_HASH
+  # ⚠️ DASHBOARD_USERNAME DEBE ser "kibanaserver"
   cred:
-    username: null  # Usar envFrom con secretKeyRef
-    password: null  # Usar envFrom con secretKeyRef
-    passwordHash: null  # Usar envFrom con secretKeyRef
+    existingSecret: "wazuh-credentials"
   
   service:
     type: ClusterIP
     httpPort: 5601
   
-  # --- Ingress para Traefik ---
   ingress:
     enabled: true
     className: "traefik"
@@ -260,22 +175,10 @@ dashboard:
     enabled: false
 
 # =============================================================================
-# WAZUH AGENT (DaemonSet)
+# WAZUH AGENT (deshabilitado inicialmente)
 # =============================================================================
-# NOTA: El agente de Wazuh SÍ tiene imagen ARM64 (wazuh/wazuh-agent:4.14.1)
-# Pero para empezar, solo lo desplegamos en x86_64
 agent:
-  enabled: false  # Habilitar después de que el stack funcione
-  
-  # Cuando lo habilites, puedes elegir:
-  # Opción A: Solo en lake (x86_64)
-  # nodeSelector:
-  #   kubernetes.io/hostname: lake
-  
-  # Opción B: En todos los nodos (si la imagen ARM funciona)
-  # nodeSelector: {}
-  # tolerations:
-  #   - operator: Exists  # Tolerar todos los taints
+  enabled: false
   
   images:
     repository: wazuh/wazuh-agent
@@ -290,8 +193,5 @@ agent:
       cpu: 100m
       memory: 128Mi
 
-# =============================================================================
-# CONFIGURACIÓN EXTERNA (no usar)
-# =============================================================================
 externalIndexer:
   enabled: false

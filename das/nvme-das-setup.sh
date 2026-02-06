@@ -47,6 +47,22 @@ check_nfs_tools() {
     fi
 }
 
+detect_nfs_service() {
+    if systemctl list-unit-files --no-legend --no-pager | grep -q "^nfs-server\\.service"; then
+        echo "nfs-server"
+        return 0
+    fi
+    if systemctl list-unit-files --no-legend --no-pager | grep -q "^nfs-kernel-server\\.service"; then
+        echo "nfs-kernel-server"
+        return 0
+    fi
+    if [[ -x /etc/init.d/nfs-kernel-server ]]; then
+        echo "nfs-kernel-server"
+        return 0
+    fi
+    return 1
+}
+
 backup_exports() {
     if [[ -f /etc/exports ]]; then
         cp /etc/exports "/etc/exports.backup.$(date +%Y%m%d%H%M%S)"
@@ -85,8 +101,21 @@ configure_exports() {
 
 apply_nfs() {
     log_info "Reiniciando NFS server..."
-    systemctl enable nfs-kernel-server
-    systemctl restart nfs-kernel-server
+    local nfs_service=""
+    if ! nfs_service=$(detect_nfs_service); then
+        log_error "No se encontro servicio NFS (nfs-server/nfs-kernel-server)."
+    fi
+
+    if ! systemctl enable "${nfs_service}"; then
+        systemctl status "${nfs_service}" --no-pager -l || true
+        log_error "No se pudo habilitar ${nfs_service}."
+    fi
+
+    if ! systemctl restart "${nfs_service}"; then
+        systemctl status "${nfs_service}" --no-pager -l || true
+        log_error "No se pudo reiniciar ${nfs_service}."
+    fi
+
     exportfs -ra
     log_ok "NFS server actualizado"
 }
