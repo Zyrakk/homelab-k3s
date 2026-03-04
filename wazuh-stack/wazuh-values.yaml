@@ -75,7 +75,7 @@ wazuh:
     kubernetes.io/hostname: lake
   
   # Cluster key - debe estar en el values (no soporta existingSecret para esto)
-  key: "93b1ec5421dfce6da16b5b159b8fb3de"
+  key: ""
   
   syslog_enable: true
   
