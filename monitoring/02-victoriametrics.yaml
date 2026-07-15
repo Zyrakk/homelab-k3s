@@ -100,6 +100,25 @@ data:
           - source_labels: [__meta_kubernetes_service_name]
             target_label: service
 
+      # NUEVO: metricas del propio Loki
+      - job_name: 'loki'
+        static_configs:
+          - targets: ['loki.monitoring.svc:3100']
+
+      # NUEVO: metricas de los agentes Alloy (1 por nodo)
+      - job_name: 'alloy'
+        kubernetes_sd_configs:
+          - role: pod
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_namespace, __meta_kubernetes_pod_label_app]
+            action: keep
+            regex: monitoring;alloy
+          - source_labels: [__meta_kubernetes_pod_container_port_number]
+            action: keep
+            regex: "12345"
+          - source_labels: [__meta_kubernetes_pod_node_name]
+            target_label: node
+
       # VictoriaMetrics self-monitoring
       - job_name: 'victoriametrics'
         static_configs:
