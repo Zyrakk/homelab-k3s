@@ -1920,6 +1920,10 @@ data:
               # Ponlo aqui directamente, ENTRE COMILLAS. No es un dato sensible
               # sin el token. Ej: "123456789" o "-1001234567890" para grupos
               chatid: "CHANGE_ME_CHAT_ID"
+              # NUEVO: mensaje limpio con plantilla propia (ver bloque templates)
+              message: '{{ template "zcloud.telegram.message" . }}'
+              parse_mode: HTML
+              disable_web_page_preview: true
             disableResolveMessage: false
     policies:
       - orgId: 1
@@ -1928,6 +1932,32 @@ data:
         group_wait: 30s
         group_interval: 5m
         repeat_interval: 4h
+    # NUEVO: plantilla de notificacion para Telegram (HTML)
+    templates:
+      - orgId: 1
+        name: zcloud-telegram
+        template: |
+          {{ define "zcloud.telegram.message" }}
+          {{- if .Alerts.Firing }}
+          🚨 <b>ZCloud</b>
+          {{- range .Alerts.Firing }}
+
+          {{ if eq .Labels.severity "critical" }}🔴{{ else }}🟡{{ end }} <b>{{ .Labels.alertname }}</b>
+          {{ .Annotations.summary }}
+          {{- end }}
+
+          <a href="https://grafana.zyrak.cloud/alerting/list">Ver en Grafana</a>
+          {{- end }}
+          {{- if .Alerts.Resolved }}
+
+          ✅ <b>Resuelto</b>
+          {{- range .Alerts.Resolved }}
+
+          ✔ <b>{{ .Labels.alertname }}</b>
+          {{ .Annotations.summary }}
+          {{- end }}
+          {{- end }}
+          {{ end }}
   rules.yaml: |
     apiVersion: 1
     groups:
