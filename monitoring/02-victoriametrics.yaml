@@ -186,6 +186,10 @@ metadata:
     app: victoriametrics
 spec:
   replicas: 1
+  # FIX: VM bloquea el directorio de datos (flock). Con RollingUpdate el pod
+  # nuevo arranca mientras el viejo sigue vivo sobre el mismo PVC -> CrashLoop
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: victoriametrics

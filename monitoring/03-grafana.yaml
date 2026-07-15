@@ -19,6 +19,14 @@ metadata:
 data:
   datasources.yaml: |
     apiVersion: 1
+    # FIX: el datasource antiguo tiene un uid aleatorio en la BD de Grafana.
+    # Se borra por nombre y se recrea con uid fijo (los dashboards usan la
+    # variable ${datasource}, no el uid, asi que no se rompe nada)
+    deleteDatasources:
+      - name: VictoriaMetrics
+        orgId: 1
+      - name: Loki
+        orgId: 1
     datasources:
       - name: VictoriaMetrics
         type: prometheus
@@ -1907,7 +1915,11 @@ data:
             type: telegram
             settings:
               bottoken: $TELEGRAM_BOT_TOKEN
-              chatid: "$TELEGRAM_CHAT_ID"
+              # FIX bug grafana#69950: el chat ID no puede venir por variable de
+              # entorno (la interpolacion lo convierte a numero y falla).
+              # Ponlo aqui directamente, ENTRE COMILLAS. No es un dato sensible
+              # sin el token. Ej: "123456789" o "-1001234567890" para grupos
+              chatid: "CHANGE_ME_CHAT_ID"
             disableResolveMessage: false
     policies:
       - orgId: 1
@@ -2151,6 +2163,10 @@ metadata:
     app: grafana
 spec:
   replicas: 1
+  # FIX: Grafana usa sqlite sobre el PVC; dos pods a la vez sobre el mismo
+  # fichero (RollingUpdate) da problemas de lock. Recreate: primero mata, luego crea
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: grafana
@@ -2181,18 +2197,15 @@ spec:
             - name: GF_SERVER_ROOT_URL
               value: "https://grafana.zyrak.cloud"
             - name: GF_INSTALL_PLUGINS
-              value: "grafana-clock-panel,grafana-piechart-panel"
-            # NUEVO: credenciales de Telegram para el contact point de alerting
+              # FIX: piechart-panel eliminado, es Angular y Grafana 12 lo rechaza
+              value: "grafana-clock-panel"
+            # NUEVO: token de Telegram para el contact point de alerting
+            # (el chat ID va directo en el ConfigMap grafana-alerting, ver bug grafana#69950)
             - name: TELEGRAM_BOT_TOKEN
               valueFrom:
                 secretKeyRef:
                   name: grafana-telegram
                   key: bot-token
-            - name: TELEGRAM_CHAT_ID
-              valueFrom:
-                secretKeyRef:
-                  name: grafana-telegram
-                  key: chat-id
           ports:
             - containerPort: 3000
               name: http
